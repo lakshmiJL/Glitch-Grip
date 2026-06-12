@@ -2019,6 +2019,14 @@
                 text(GESTURE_LABELS[targetGesture], width / 2, height / 2 - 60);
                 drawingContext.shadowBlur = 0;
 
+                // Move Timer Text
+                let moveSeconds = (gameTimer / 60).toFixed(1);
+                textAlign(CENTER);
+                fill(gameTimer < targetDuration * 0.3 ? [255, 42, 95] : 255, 180);
+                textSize(13);
+                fontFamily = 'Share Tech Mono';
+                text(`SYNC WINDOW: ${moveSeconds}s`, width / 2, height / 2 - 25);
+
                 // Progress Bar
                 let barW = 400;
                 let progress = (gameTimer / targetDuration) * barW;
