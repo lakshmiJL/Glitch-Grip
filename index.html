@@ -1,0 +1,2242 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GlitchGrip | AI Hand Tracking Game</title>
+    <script src="https://cdn.jsdelivr.net/npm/p5@1.4.2/lib/p5.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;900&family=Share+Tech+Mono&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #030407;
+            --panel-bg: rgba(6, 8, 12, 0.82);
+            --cyan-accent: #00f3ff;
+            --purple-accent: #b600ff;
+            --success-color: #00ffa3;
+            --error-color: #ff2a5f;
+            --text-main: #f0f2f5;
+            --text-muted: rgba(240, 242, 245, 0.6);
+            --font-main: 'Outfit', 'Inter', sans-serif;
+            --font-mono: 'Share Tech Mono', monospace;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: var(--bg-dark);
+            font-family: var(--font-main);
+            color: var(--text-main);
+        }
+
+        #canvas-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* UI HUD OVERLAY */
+        .ui-overlay {
+            position: absolute;
+            top: 35px;
+            left: 35px;
+            z-index: 20;
+            pointer-events: none;
+        }
+
+        .title {
+            font-size: 1.8rem;
+            font-weight: 900;
+            letter-spacing: 5px;
+            text-transform: uppercase;
+            background: linear-gradient(90deg, var(--cyan-accent), var(--purple-accent));
+            background-size: 200% auto;
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: shine 6s linear infinite;
+            margin-bottom: 6px;
+            filter: drop-shadow(0 0 10px rgba(0, 243, 255, 0.3));
+        }
+
+        @keyframes shine {
+            to {
+                background-position: 200% center;
+            }
+        }
+
+        .status {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            color: var(--cyan-accent);
+            letter-spacing: 2px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status::before {
+            content: '';
+            width: 8px;
+            height: 8px;
+            background: var(--cyan-accent);
+            border-radius: 50%;
+            display: inline-block;
+            box-shadow: 0 0 10px var(--cyan-accent);
+            animation: pulse 1s ease-in-out infinite alternate;
+        }
+
+        @keyframes pulse {
+            from {
+                opacity: 0.4;
+            }
+
+            to {
+                opacity: 1;
+                transform: scale(1.1);
+            }
+        }
+
+        /* Loading Screen */
+        .loading-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: var(--bg-dark);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            transition: opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .loader {
+            width: 50px;
+            height: 50px;
+            border: 2px solid rgba(182, 0, 255, 0.1);
+            border-top: 2px solid var(--purple-accent);
+            border-left: 2px solid var(--cyan-accent);
+            border-radius: 50%;
+            animation: spin 0.8s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+            margin-bottom: 24px;
+            box-shadow: 0 0 15px rgba(0, 243, 255, 0.15);
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .loading-text {
+            font-family: var(--font-mono);
+            letter-spacing: 4px;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            animation: blink 1.5s infinite alternate;
+        }
+
+        @keyframes blink {
+            from {
+                opacity: 0.5;
+            }
+
+            to {
+                opacity: 1;
+            }
+        }
+
+        /* Cyberpunk scanlines and vignette */
+        .scanline-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 15;
+            pointer-events: none;
+            overflow: hidden;
+        }
+
+        .scanline {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to bottom,
+                    rgba(18, 16, 16, 0) 50%,
+                    rgba(0, 0, 0, 0.18) 50%);
+            background-size: 100% 4px;
+            opacity: 0.3;
+        }
+
+        .vignette {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle, transparent 50%, rgba(3, 4, 7, 0.85) 100%);
+            z-index: 16;
+            pointer-events: none;
+        }
+
+        #video-element {
+            display: none;
+        }
+
+        /* Generic Cyber Card corner tick structures */
+        .cyber-card {
+            position: relative;
+            background: var(--panel-bg);
+            border: 1px solid rgba(0, 243, 255, 0.15);
+            border-radius: 12px;
+            padding: 30px;
+            box-sizing: border-box;
+            backdrop-filter: blur(12px);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+
+        .cyber-card::before,
+        .cyber-card::after {
+            content: '';
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            border: 2px solid transparent;
+            pointer-events: none;
+        }
+
+        .cyber-card::before {
+            top: -1px;
+            left: -1px;
+            border-top-color: var(--cyan-accent);
+            border-left-color: var(--cyan-accent);
+            border-top-left-radius: 12px;
+        }
+
+        .cyber-card::after {
+            bottom: -1px;
+            right: -1px;
+            border-bottom-color: var(--purple-accent);
+            border-right-color: var(--purple-accent);
+            border-bottom-right-radius: 12px;
+        }
+
+        /* Full Screen Overlay for welcome tutorial */
+        .tutorial-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(3, 4, 7, 0.88);
+            z-index: 150;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            box-sizing: border-box;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.5s ease;
+            backdrop-filter: blur(12px);
+        }
+
+        .tutorial-overlay.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .tutorial-content {
+            max-width: 850px;
+            width: 100%;
+        }
+
+        .welcome-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .welcome-subtitle {
+            font-family: var(--font-mono);
+            font-size: 0.9rem;
+            color: var(--purple-accent);
+            letter-spacing: 3px;
+            margin-top: 5px;
+            text-transform: uppercase;
+        }
+
+        /* Modern Feature Grid */
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }
+
+        .feature-card {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 20px;
+            border-radius: 10px;
+            transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+            text-align: center;
+        }
+
+        .feature-card:hover {
+            border-color: var(--cyan-accent);
+            background: rgba(0, 243, 255, 0.04);
+            transform: translateY(-4px);
+            box-shadow: 0 8px 20px rgba(0, 243, 255, 0.08);
+        }
+
+        .feature-icon-wrapper {
+            width: 55px;
+            height: 55px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 0 auto 15px auto;
+            transition: all 0.3s;
+        }
+
+        .feature-card:hover .feature-icon-wrapper {
+            background: rgba(0, 243, 255, 0.1);
+            border-color: var(--cyan-accent);
+            box-shadow: 0 0 15px rgba(0, 243, 255, 0.2);
+        }
+
+        .feature-icon {
+            font-size: 1.8rem;
+        }
+
+        .feature-title {
+            font-weight: 700;
+            font-size: 0.95rem;
+            letter-spacing: 1.5px;
+            color: var(--text-main);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+        }
+
+        .feature-desc {
+            font-size: 0.82rem;
+            color: var(--text-muted);
+            line-height: 1.5;
+        }
+
+        /* High Tech Buttons */
+        .start-btn {
+            display: block;
+            margin: 40px auto 0 auto;
+            padding: 14px 42px;
+            background: linear-gradient(135deg, rgba(0, 243, 255, 0.1), rgba(182, 0, 255, 0.1));
+            border: 1px solid var(--cyan-accent);
+            color: var(--cyan-accent);
+            font-family: var(--font-mono);
+            font-weight: bold;
+            font-size: 0.9rem;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 0 15px rgba(0, 243, 255, 0.1);
+        }
+
+        .start-btn:hover {
+            background: linear-gradient(135deg, var(--cyan-accent), var(--purple-accent));
+            color: #000;
+            border-color: transparent;
+            box-shadow: 0 0 30px rgba(0, 243, 255, 0.4);
+            transform: scale(1.02);
+        }
+
+        .start-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: 0.5s;
+        }
+
+        .start-btn:hover::before {
+            left: 100%;
+        }
+
+        /* HUD telemetry indicators */
+        .hud-label {
+            font-family: var(--font-mono);
+            font-size: 0.65rem;
+            letter-spacing: 2px;
+            opacity: 0.5;
+            margin-bottom: 2px;
+        }
+
+        /* Pose Tutorial and Calibration Panel Styles */
+        .pose-tutorial-panel {
+            position: fixed;
+            top: 35px;
+            right: 35px;
+            width: 390px;
+            background: var(--panel-bg);
+            border: 1px solid rgba(0, 243, 255, 0.15);
+            border-radius: 16px;
+            padding: 26px;
+            box-sizing: border-box;
+            z-index: 150;
+            backdrop-filter: blur(16px);
+            box-shadow: 0 15px 50px rgba(0, 0, 0, 0.5);
+            transition: all 0.5s cubic-bezier(0.25, 0.8, 0.25, 1);
+            transform: translateX(470px);
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .pose-tutorial-panel::before,
+        .pose-tutorial-panel::after {
+            content: '';
+            position: absolute;
+            width: 15px;
+            height: 15px;
+            border: 2px solid transparent;
+            pointer-events: none;
+        }
+
+        .pose-tutorial-panel::before {
+            top: -1px;
+            left: -1px;
+            border-top-color: var(--cyan-accent);
+            border-left-color: var(--cyan-accent);
+            border-top-left-radius: 16px;
+        }
+
+        .pose-tutorial-panel::after {
+            bottom: -1px;
+            right: -1px;
+            border-bottom-color: var(--purple-accent);
+            border-right-color: var(--purple-accent);
+            border-bottom-right-radius: 16px;
+        }
+
+        .pose-tutorial-panel.active {
+            transform: translateX(0);
+            border-color: rgba(0, 243, 255, 0.35);
+        }
+
+        .tutorial-panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            padding-bottom: 14px;
+        }
+
+        .step-indicator {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            letter-spacing: 2px;
+            color: var(--purple-accent);
+            font-weight: bold;
+        }
+
+        .skip-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            letter-spacing: 1.5px;
+            cursor: pointer;
+            transition: color 0.3s;
+            text-transform: uppercase;
+        }
+
+        .skip-btn:hover {
+            color: var(--cyan-accent);
+            text-shadow: 0 0 10px rgba(0, 243, 255, 0.4);
+        }
+
+        .slide-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            flex-grow: 1;
+            padding: 10px 0;
+        }
+
+        .pose-icon-wrapper {
+            width: 90px;
+            height: 90px;
+            border-radius: 50%;
+            background: rgba(0, 243, 255, 0.02);
+            border: 1px dashed rgba(0, 243, 255, 0.3);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-bottom: 22px;
+            position: relative;
+            animation: pulse-border 2.5s infinite;
+        }
+
+        .pose-icon-wrapper::before {
+            content: '';
+            position: absolute;
+            width: 104px;
+            height: 104px;
+            border-radius: 50%;
+            border: 1px solid rgba(0, 243, 255, 0.08);
+        }
+
+        @keyframes pulse-border {
+            0% {
+                box-shadow: 0 0 0 0 rgba(0, 243, 255, 0.2);
+                border-color: rgba(0, 243, 255, 0.3);
+            }
+
+            70% {
+                box-shadow: 0 0 0 12px rgba(0, 243, 255, 0);
+                border-color: rgba(0, 243, 255, 0.1);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(0, 243, 255, 0);
+                border-color: rgba(0, 243, 255, 0.3);
+            }
+        }
+
+        .pose-icon {
+            font-size: 3rem;
+            filter: drop-shadow(0 0 10px rgba(0, 243, 255, 0.2));
+        }
+
+        .pose-title {
+            font-size: 1.5rem;
+            font-weight: 800;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            margin: 0 0 12px 0;
+            background: linear-gradient(90deg, var(--cyan-accent), var(--purple-accent));
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .pose-desc {
+            font-size: 0.88rem;
+            color: var(--text-muted);
+            line-height: 1.55;
+            margin-bottom: 26px;
+        }
+
+        /* Sleek Bio status indicator bar */
+        .calibration-status {
+            width: 100%;
+            padding: 12px 18px;
+            border-radius: 8px;
+            background: rgba(255, 42, 95, 0.04);
+            border: 1px solid rgba(255, 42, 95, 0.15);
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            transition: all 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+            box-sizing: border-box;
+        }
+
+        .calibration-status::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 3px;
+            background: var(--error-color);
+        }
+
+        .calibration-status.success {
+            background: rgba(0, 255, 163, 0.05);
+            border-color: rgba(0, 255, 163, 0.3);
+            box-shadow: 0 0 20px rgba(0, 255, 163, 0.08);
+        }
+
+        .calibration-status.success::before {
+            background: var(--success-color);
+        }
+
+        .status-indicator-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--error-color);
+            border-radius: 50%;
+            box-shadow: 0 0 10px var(--error-color);
+            animation: pulse-dot 0.8s infinite alternate;
+        }
+
+        .calibration-status.success .status-indicator-dot {
+            background: var(--success-color);
+            box-shadow: 0 0 10px var(--success-color);
+        }
+
+        .status-details {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 2px;
+        }
+
+        .status-title {
+            font-family: var(--font-mono);
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        .status-text {
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            color: var(--error-color);
+            text-transform: uppercase;
+        }
+
+        .calibration-status.success .status-text {
+            color: var(--success-color);
+        }
+
+        /* Controls */
+        .tutorial-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            padding-top: 16px;
+        }
+
+        .nav-btn {
+            background: transparent;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: var(--text-main);
+            padding: 10px 22px;
+            font-family: var(--font-mono);
+            font-weight: bold;
+            font-size: 0.75rem;
+            letter-spacing: 1.5px;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: all 0.3s;
+            text-transform: uppercase;
+        }
+
+        .nav-btn:hover:not(:disabled) {
+            border-color: var(--cyan-accent);
+            color: var(--cyan-accent);
+            background: rgba(0, 243, 255, 0.02);
+        }
+
+        .nav-btn:disabled {
+            opacity: 0.2;
+            cursor: not-allowed;
+        }
+
+        .nav-btn.next-btn {
+            border-color: rgba(182, 0, 255, 0.35);
+            color: var(--purple-accent);
+        }
+
+        .nav-btn.next-btn:hover:not(:disabled) {
+            border-color: var(--purple-accent);
+            color: var(--purple-accent);
+            background: rgba(182, 0, 255, 0.03);
+        }
+
+        .nav-btn.next-btn.success-glow {
+            border-color: var(--cyan-accent);
+            color: var(--cyan-accent);
+            background: rgba(0, 243, 255, 0.08);
+            box-shadow: 0 0 15px rgba(0, 243, 255, 0.25);
+            animation: glow-btn 1.5s infinite alternate;
+        }
+
+        @keyframes glow-btn {
+            from {
+                box-shadow: 0 0 5px rgba(0, 243, 255, 0.15);
+            }
+
+            to {
+                box-shadow: 0 0 18px rgba(0, 243, 255, 0.45);
+            }
+        }
+
+        /* Sleek segment bar progress indicators */
+        .tutorial-dots {
+            display: flex;
+            gap: 6px;
+        }
+
+        .dot {
+            width: 20px;
+            height: 3px;
+            border-radius: 1px;
+            background: rgba(255, 255, 255, 0.1);
+            transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+
+        .dot.active {
+            background: var(--purple-accent);
+            box-shadow: 0 0 8px var(--purple-accent);
+            width: 28px;
+        }
+
+        .dot.calibrated {
+            background: var(--cyan-accent);
+            box-shadow: 0 0 8px var(--cyan-accent);
+        }
+
+        /* ── Game Over Overlay ─────────────────────────────── */
+        #game-over {
+            position: fixed;
+            inset: 0;
+            background: rgba(3, 4, 7, 0.92);
+            backdrop-filter: blur(16px);
+            z-index: 200;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        #game-over.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+        .go-card {
+            position: relative;
+            background: rgba(6, 8, 14, 0.9);
+            border: 1px solid rgba(255, 42, 95, 0.35);
+            border-radius: 16px;
+            padding: 48px 56px;
+            text-align: center;
+            max-width: 480px;
+            width: 90%;
+            box-shadow: 0 0 60px rgba(255, 42, 95, 0.12), 0 20px 60px rgba(0,0,0,0.6);
+        }
+        .go-card::before {
+            content: '';
+            position: absolute;
+            inset: -1px;
+            border-radius: 16px;
+            background: linear-gradient(135deg, rgba(255,42,95,0.25) 0%, transparent 50%, rgba(0,243,255,0.15) 100%);
+            pointer-events: none;
+        }
+        .go-title {
+            font-family: var(--font-mono);
+            font-size: 1rem;
+            letter-spacing: 6px;
+            color: var(--error-color);
+            text-transform: uppercase;
+            margin-bottom: 4px;
+            text-shadow: 0 0 20px rgba(255,42,95,0.6);
+        }
+        .go-headline {
+            font-size: 3.5rem;
+            font-weight: 900;
+            letter-spacing: 3px;
+            background: linear-gradient(90deg, var(--error-color), var(--purple-accent));
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin: 0 0 32px 0;
+        }
+        .go-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+        .go-stat {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 10px;
+            padding: 16px;
+        }
+        .go-stat-label {
+            font-family: var(--font-mono);
+            font-size: 0.65rem;
+            letter-spacing: 2px;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+        }
+        .go-stat-value {
+            font-family: var(--font-mono);
+            font-size: 1.6rem;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+        .go-stat-value.cyan { color: var(--cyan-accent); text-shadow: 0 0 12px rgba(0,243,255,0.4); }
+        .go-stat-value.purple { color: var(--purple-accent); text-shadow: 0 0 12px rgba(182,0,255,0.4); }
+        .go-record {
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            letter-spacing: 2px;
+            color: var(--success-color);
+            margin-bottom: 28px;
+            text-shadow: 0 0 10px rgba(0,255,163,0.5);
+            min-height: 20px;
+        }
+        .go-btn {
+            background: linear-gradient(135deg, rgba(255,42,95,0.15), rgba(182,0,255,0.15));
+            border: 1px solid var(--error-color);
+            color: var(--text-main);
+            padding: 14px 48px;
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            font-weight: 700;
+            letter-spacing: 3px;
+            cursor: pointer;
+            border-radius: 8px;
+            text-transform: uppercase;
+            transition: all 0.3s;
+        }
+        .go-btn:hover {
+            background: linear-gradient(135deg, rgba(255,42,95,0.3), rgba(182,0,255,0.3));
+            box-shadow: 0 0 20px rgba(255,42,95,0.3);
+            transform: scale(1.03);
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="loading" class="loading-screen">
+        <div class="loader"></div>
+        <p class="loading-text">CALIBRATING NEURAL INTERFACE</p>
+    </div>
+
+    <div id="tutorial" class="tutorial-overlay">
+        <div class="tutorial-content cyber-card">
+            <div class="welcome-header">
+                <h1 class="title" style="font-size: 2.2rem; margin-bottom: 5px;">NEURAL CALIBRATION</h1>
+                <div class="welcome-subtitle">BIOMETRIC HAND-TRACKING INTERFACE</div>
+            </div>
+
+            <p
+                style="color: var(--text-muted); text-align: center; font-size: 0.9rem; line-height: 1.6; max-width: 600px; margin: 0 auto 30px auto;">
+                Welcome, Operator. Before entering the cyberspace grid, we must synchronize the neural interface and
+                calibrate your biometric hand poses.
+            </p>
+
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <div class="feature-icon-wrapper">
+                        <span class="feature-icon">⚡</span>
+                    </div>
+                    <div class="feature-title">Neural Strings</div>
+                    <div class="feature-desc">Interactive energy strings join your hands. Warp the cyber grid
+                        dynamically.</div>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon-wrapper">
+                        <span class="feature-icon">🫰</span>
+                    </div>
+                    <div class="feature-title">Digital Snap</div>
+                    <div class="feature-desc">Pinch index and thumb to cycle the color palette and emit code bytes.
+                    </div>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon-wrapper">
+                        <span class="feature-icon">👊</span>
+                    </div>
+                    <div class="feature-title">Kinetic Burst</div>
+                    <div class="feature-desc">Form a tight fist to trigger high-voltage lightning between your hand
+                        nodes.</div>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon-wrapper">
+                        <span class="feature-icon">❤️</span>
+                    </div>
+                    <div class="feature-title">Heart Link</div>
+                    <div class="feature-desc">Join both hands into a heart to emit bursts of digital affection.</div>
+                </div>
+            </div>
+
+            <button class="start-btn" onclick="startCalibration()">INITIALIZE CALIBRATION</button>
+        </div>
+    </div>
+
+    <!-- Floating Interactive Calibration Slideshow Panel -->
+    <div id="tutorial-panel" class="pose-tutorial-panel">
+        <div class="tutorial-panel-header">
+            <span class="step-indicator" id="tutorial-step-indicator">CALIBRATION STEP 1 OF 5</span>
+            <button class="skip-btn" onclick="skipCalibration()">SKIP</button>
+        </div>
+        <div class="slide-container">
+            <!-- Dynamically populated via JavaScript -->
+        </div>
+        <div class="tutorial-controls">
+            <button class="nav-btn prev-btn" id="tutorial-prev-btn" onclick="prevTutorialStep()">BACK</button>
+            <div class="tutorial-dots" id="tutorial-dots"></div>
+            <button class="nav-btn next-btn" id="tutorial-next-btn" onclick="nextTutorialStep()">NEXT</button>
+        </div>
+    </div>
+
+    <!-- Game Over Overlay -->
+    <div id="game-over">
+        <div class="go-card">
+            <div class="go-title">CONNECTION LOST</div>
+            <h2 class="go-headline">GAME OVER</h2>
+            <div class="go-stats">
+                <div class="go-stat">
+                    <div class="go-stat-label">FINAL SCORE</div>
+                    <div class="go-stat-value cyan" id="go-score">0</div>
+                </div>
+                <div class="go-stat">
+                    <div class="go-stat-label">HIGH SCORE</div>
+                    <div class="go-stat-value" id="go-highscore">0</div>
+                </div>
+                <div class="go-stat">
+                    <div class="go-stat-label">MAX COMBO</div>
+                    <div class="go-stat-value purple" id="go-combo">0</div>
+                </div>
+                <div class="go-stat">
+                    <div class="go-stat-label">LEVEL REACHED</div>
+                    <div class="go-stat-value" id="go-level">1</div>
+                </div>
+            </div>
+            <div class="go-record" id="go-record"></div>
+            
+            <div id="ai-report-container" style="display: none; background: rgba(0,243,255,0.05); border: 1px solid rgba(0,243,255,0.2); padding: 15px; border-radius: 8px; margin-bottom: 25px; text-align: left;">
+                <div style="font-family: var(--font-mono); font-size: 0.7rem; color: var(--cyan-accent); margin-bottom: 5px;">GEMINI NEURAL ANALYSIS</div>
+                <div id="ai-report-text" style="font-size: 0.85rem; line-height: 1.5; color: var(--text-muted); font-style: italic;">Analyzing biometric data...</div>
+            </div>
+
+            <button class="go-btn" onclick="restartGame()">RECONNECT</button>
+        </div>
+    </div>
+
+    <div class="ui-overlay">
+        <div class="title" style="font-size: 1.6rem; letter-spacing: 6px;">GLITCHGRIP</div>
+        <div id="status-text" class="status" style="font-size: 0.75rem; letter-spacing: 2px;">SEARCHING FOR BIOMETRIC
+            SIGNALS...</div>
+    </div>
+
+    <div class="scanline-container">
+        <div class="scanline"></div>
+        <div class="vignette"></div>
+    </div>
+
+    <div id="canvas-container"></div>
+
+    <video id="video-element" playsinline></video>
+
+    <script>
+        let hands;
+        let camera;
+        let detections = [];
+        let videoElement;
+        let canvas;
+        let particles = [];
+        let shockwaves = [];
+        let chromaticAmt = 0;
+        let scorePopups = [];
+        let lives = 3;
+        let highScore = parseInt(localStorage.getItem('glitchGripHighScore') || '0');
+        let audioCtx = null;
+        let droneOsc = null, droneGain = null;
+
+        const PALETTES = [
+            { name: 'neon', left: [0, 255, 255], right: [255, 0, 255], accent: [255, 255, 0] },
+            { name: 'poison', left: [0, 255, 100], right: [150, 255, 0], accent: [255, 255, 255] },
+            { name: 'plasma', left: [150, 0, 255], right: [255, 0, 150], accent: [0, 255, 255] },
+            { name: 'infrared', left: [255, 50, 0], right: [255, 150, 0], accent: [255, 255, 0] }
+        ];
+
+        let paletteIdx = 0;
+        let gameState = 'loading'; // loading, intro, calibration, waiting, playing
+        let score = 0, combo = 0, maxCombo = 0, level = 1;
+        let targetGesture = '';
+        let gameTimer = 0, targetDuration = 180;
+        let feedbackText = '', feedbackTimer = 0;
+        let comboShake = 0;
+        let currentPalette = PALETTES[0];
+        let handGestures = ['open', 'open'];
+        let globalGesture = ''; // For two-handed gestures
+        let handVelocities = [0, 0];
+        let lastWristPos = [{ x: 0, y: 0 }, { x: 0, y: 0 }];
+
+        let glitchAlpha = 0;
+        let pinchCooldown = 0;
+        let clapCooldown = 0;
+
+        // Interactive Calibration slideshow variables
+        let calibrationIndex = 0;
+        let calibratedPoses = {
+            'fist': false,
+            'peace': false,
+            'pinch': false,
+            'shake': false,
+            'heart': false
+        };
+        const CALIBRATION_POSES = [
+            {
+                id: 'fist',
+                name: 'Kinetic Burst (Fist)',
+                icon: '👊',
+                desc: 'Make a tight fist with either hand to channel high-voltage lightning through the digital strings.',
+                check: () => handGestures.includes('fist')
+            },
+            {
+                id: 'peace',
+                name: 'V-Sign (Peace)',
+                icon: '✌️',
+                desc: 'Form a V-sign with your index and middle fingers to trigger organic flower and emoji emitters.',
+                check: () => handGestures.includes('peace')
+            },
+            {
+                id: 'pinch',
+                name: 'Digital Snap (Pinch)',
+                icon: '🫰',
+                desc: 'Pinch your thumb and index finger together to execute a digital snap, releasing geometric codes and cycling color palettes.',
+                check: () => handGestures.includes('pinch')
+            },
+            {
+                id: 'shake',
+                name: 'Neural Shake',
+                icon: '🌀',
+                desc: 'Shake either hand rapidly to warp the space-time grid and scatter emojis.',
+                check: () => handVelocities.some(v => v > 0.08)
+            },
+            {
+                id: 'heart',
+                name: 'Heart Link',
+                icon: '❤️',
+                desc: 'Bring both hands together with thumbs and index fingers touching to form a heart and emit pulses of love.',
+                check: () => globalGesture === 'heart'
+            }
+        ];
+
+        const GESTURE_TARGETS = ['fist', 'peace', 'pinch', 'shake', 'heart'];
+        const GESTURE_LABELS = {
+            'fist': 'CLUTCH FIST',
+            'peace': 'V-SIGN',
+            'pinch': 'DIGITAL SNAP',
+            'shake': 'NEURAL SHAKE',
+            'heart': 'HEART LINK'
+        };
+        const TIP_INDICES = [4, 8, 12, 16, 20];
+        let gridPoints = [];
+        let dataStreams = [];
+        let trailHistory = [];
+        const MAX_TRAIL_LEN = 20;
+
+        class DataStream {
+            constructor() {
+                this.reset();
+            }
+            reset() {
+                this.x = random(width);
+                this.y = random(-height, 0);
+                this.speed = random(2, 8);
+                this.len = floor(random(5, 15));
+                this.chars = [];
+                for (let i = 0; i < this.len; i++) this.chars.push(String.fromCharCode(0x30A0 + floor(random(96))));
+            }
+            update() {
+                this.y += this.speed;
+                if (this.y > height) this.reset();
+                if (frameCount % 10 === 0) {
+                    this.chars[floor(random(this.len))] = String.fromCharCode(0x30A0 + floor(random(96)));
+                }
+            }
+            draw() {
+                textAlign(CENTER);
+                textSize(10);
+                for (let i = 0; i < this.len; i++) {
+                    let alpha = map(i, 0, this.len, 20, 150);
+                    fill(0, 255, 255, alpha);
+                    text(this.chars[i], this.x, this.y - (i * 12));
+                }
+            }
+        }
+
+        class GridPoint {
+            constructor(x, y) {
+                this.baseX = x;
+                this.baseY = y;
+                this.x = x;
+                this.y = y;
+                this.vx = 0;
+                this.vy = 0;
+            }
+
+            update(landmarks) {
+                let dx = 0;
+                let dy = 0;
+
+                if (landmarks) {
+                    const importantIndices = [0, 4, 8, 12, 16, 20];
+
+                    landmarks.forEach(hand => {
+                        importantIndices.forEach(idx => {
+                            const lm = hand[idx];
+                            const lmx = (1 - lm.x) * width;
+                            const lmy = lm.y * height;
+
+                            if (Math.abs(this.x - lmx) < 120 && Math.abs(this.y - lmy) < 120) {
+                                const d = dist(this.x, this.y, lmx, lmy);
+                                if (d < 120) {
+                                    const force = map(d, 0, 120, 20, 0);
+                                    const angle = atan2(this.y - lmy, this.x - lmx);
+                                    dx += cos(angle) * force;
+                                    dy += sin(angle) * force;
+                                }
+                            }
+                        });
+                    });
+                }
+
+                const ax = (this.baseX - this.x) * 0.15;
+                const ay = (this.baseY - this.y) * 0.15;
+                this.vx = (this.vx + ax + dx) * 0.7;
+                this.vy = (this.vy + ay + dy) * 0.7;
+                this.x += this.vx;
+                this.y += this.vy;
+            }
+        }
+
+        class Particle {
+            constructor(x, y, color, type = 'default', content = '') {
+                this.x = x;
+                this.y = y;
+                this.type = type;
+                this.content = content;
+                this.color = color;
+                this.alpha = 255;
+                this.size = random(4, 8);
+                this.angle = random(TWO_PI);
+                this.rotSpeed = random(-0.05, 0.05);
+
+                if (type === 'flower') {
+                    this.vx = random(-2, 2);
+                    this.vy = random(1, 4);
+                    this.size = random(5, 12);
+                } else if (type === 'spark') {
+                    this.vx = random(-10, 10);
+                    this.vy = random(-10, 10);
+                    this.size = random(10, 20);
+                } else if (type === 'cube') {
+                    this.vx = random(-4, 4);
+                    this.vy = random(-4, 4);
+                    this.size = random(6, 10);
+                } else if (type === 'emoji') {
+                    this.vx = random(-3, 3);
+                    this.vy = random(-5, -12); // Fly UP
+                    this.size = random(20, 40);
+                } else {
+                    this.vx = random(-5, 5);
+                    this.vy = random(-5, 5);
+                }
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.angle += this.rotSpeed;
+
+                if (this.type === 'flower') {
+                    this.vx += sin(frameCount * 0.1) * 0.1;
+                    this.alpha -= 3;
+                } else if (this.type === 'spark') {
+                    this.alpha -= 15;
+                } else if (this.type === 'cube') {
+                    this.alpha -= 5;
+                    this.vy += 0.1;
+                } else if (this.type === 'emoji') {
+                    this.alpha -= 4;
+                    this.vx += sin(frameCount * 0.05) * 0.2; // Wobbly path
+                } else {
+                    this.alpha -= 10;
+                }
+            }
+
+            draw() {
+                push();
+                translate(this.x, this.y);
+                rotate(this.angle);
+
+                if (this.type === 'emoji') {
+                    textSize(this.size);
+                    textAlign(CENTER, CENTER);
+                    fill(255);
+                    noStroke();
+                    drawingContext.shadowBlur = 0;
+                    drawingContext.globalAlpha = this.alpha / 255;
+                    text(this.content, 0, 0);
+                    drawingContext.globalAlpha = 1.0;
+                } else {
+                    noStroke();
+                    if (this.type === 'flower') {
+                        fill(255, 182, 193, this.alpha);
+                        ellipse(0, 0, this.size, this.size * 0.6);
+                        ellipse(0, 0, this.size * 0.6, this.size);
+                    } else if (this.type === 'spark') {
+                        stroke(this.color[0], this.color[1], this.color[2], this.alpha);
+                        strokeWeight(2);
+                        line(-this.size, 0, this.size, 0);
+                    } else if (this.type === 'cube') {
+                        fill(this.color[0], this.color[1], this.color[2], this.alpha);
+                        rectMode(CENTER);
+                        rect(0, 0, this.size, this.size);
+                        stroke(255, this.alpha);
+                        strokeWeight(1);
+                        noFill();
+                        rect(0, 0, this.size + 2, this.size + 2);
+                    } else {
+                        fill(this.color[0], this.color[1], this.color[2], this.alpha);
+                        ellipse(0, 0, this.size);
+                    }
+                }
+                pop();
+            }
+        }
+
+        function setup() {
+            const container = document.getElementById('canvas-container');
+            canvas = createCanvas(windowWidth, windowHeight);
+            canvas.parent(container);
+            textFont('Share Tech Mono');
+
+            const res = 70;
+            for (let x = 0; x <= width; x += res) {
+                for (let y = 0; y <= height; y += res) {
+                    gridPoints.push(new GridPoint(x, y));
+                }
+            }
+
+            for (let i = 0; i < 40; i++) {
+                dataStreams.push(new DataStream());
+            }
+
+            videoElement = document.getElementById('video-element');
+            hands = new Hands({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+            });
+            hands.setOptions({
+                maxNumHands: 2,
+                modelComplexity: 1,
+                minDetectionConfidence: 0.6,
+                minTrackingConfidence: 0.6
+            });
+            hands.onResults(onResults);
+            camera = new Camera(videoElement, {
+                onFrame: async () => {
+                    await hands.send({ image: videoElement });
+                },
+                width: 1280,
+                height: 720
+            });
+            camera.start().then(() => {
+                document.getElementById('status-text').innerText = 'NEURAL LINK ESTABLISHED';
+                document.getElementById('loading').style.opacity = '0';
+                setTimeout(() => {
+                    document.getElementById('loading').style.display = 'none';
+                    showTutorial();
+                }, 800);
+            });
+        }
+
+        function showTutorial() {
+            gameState = 'intro';
+            document.getElementById('tutorial').classList.add('active');
+        }
+
+        function hideTutorial() {
+            document.getElementById('tutorial').classList.remove('active');
+            gameState = 'waiting';
+            glitchAlpha = 255;
+        }
+
+        function startCalibration() {
+            document.getElementById('tutorial').classList.remove('active');
+            gameState = 'calibration';
+            calibrationIndex = 0;
+            document.getElementById('tutorial-panel').classList.add('active');
+            updateCalibrationPanel();
+            glitchAlpha = 150;
+        }
+
+        function skipCalibration() {
+            finishCalibration();
+        }
+
+        function prevTutorialStep() {
+            if (calibrationIndex > 0) {
+                calibrationIndex--;
+                updateCalibrationPanel();
+            }
+        }
+
+        function nextTutorialStep() {
+            if (calibrationIndex < CALIBRATION_POSES.length - 1) {
+                calibrationIndex++;
+                updateCalibrationPanel();
+            } else if (calibrationIndex === CALIBRATION_POSES.length - 1) {
+                calibrationIndex++;
+                updateCalibrationPanel();
+            }
+        }
+
+        function updateCalibrationPanel() {
+            const slideContainer = document.querySelector('.slide-container');
+            const prevBtn = document.getElementById('tutorial-prev-btn');
+            const nextBtn = document.getElementById('tutorial-next-btn');
+            const dotsContainer = document.getElementById('tutorial-dots');
+
+            prevBtn.style.display = '';
+            nextBtn.style.display = '';
+            dotsContainer.style.display = '';
+
+            if (calibrationIndex >= CALIBRATION_POSES.length) {
+                renderCalibrationComplete();
+                return;
+            }
+
+            const pose = CALIBRATION_POSES[calibrationIndex];
+
+            document.getElementById('tutorial-step-indicator').innerText = `CALIBRATION STEP ${calibrationIndex + 1} OF ${CALIBRATION_POSES.length}`;
+
+            slideContainer.innerHTML = `
+                <div class="pose-icon-wrapper" id="pose-icon-wrapper">
+                    <span class="pose-icon" id="tutorial-pose-icon">${pose.icon}</span>
+                </div>
+                <h2 class="pose-title" id="tutorial-pose-title">${pose.name}</h2>
+                <div class="pose-desc" id="tutorial-pose-desc">${pose.desc}</div>
+                
+                <div class="calibration-status" id="calibration-status">
+                    <div class="status-indicator-dot"></div>
+                    <div class="status-details">
+                        <span class="status-title">BIOMETRIC SYNC STATUS</span>
+                        <span class="status-text" id="calibration-status-text">WAITING FOR PATTERN...</span>
+                    </div>
+                </div>
+            `;
+
+            prevBtn.disabled = calibrationIndex === 0;
+
+            const statusDiv = document.getElementById('calibration-status');
+            const statusText = document.getElementById('calibration-status-text');
+            const iconWrapper = document.getElementById('pose-icon-wrapper');
+
+            if (calibratedPoses[pose.id]) {
+                statusDiv.classList.add('success');
+                statusText.innerText = 'PATTERN LOCKED [ SECURED ]';
+                iconWrapper.style.borderColor = 'var(--cyan-accent)';
+                iconWrapper.style.borderStyle = 'solid';
+                nextBtn.classList.add('success-glow');
+                nextBtn.disabled = false;
+            } else {
+                statusDiv.classList.remove('success');
+                statusText.innerText = 'WAITING FOR PATTERN...';
+                iconWrapper.style.borderColor = '';
+                iconWrapper.style.borderStyle = '';
+                nextBtn.classList.remove('success-glow');
+                nextBtn.disabled = true;
+            }
+            nextBtn.innerText = calibrationIndex === CALIBRATION_POSES.length - 1 ? 'COMPLETE' : 'NEXT';
+
+            renderDots();
+        }
+
+        function renderDots() {
+            const dotsContainer = document.getElementById('tutorial-dots');
+            dotsContainer.innerHTML = '';
+            for (let i = 0; i < CALIBRATION_POSES.length; i++) {
+                const dot = document.createElement('div');
+                dot.className = 'dot';
+                if (i === calibrationIndex) dot.classList.add('active');
+                if (calibratedPoses[CALIBRATION_POSES[i].id]) dot.classList.add('calibrated');
+
+                dot.style.cursor = 'pointer';
+                dot.onclick = () => {
+                    calibrationIndex = i;
+                    updateCalibrationPanel();
+                };
+
+                dotsContainer.appendChild(dot);
+            }
+        }
+
+        function triggerCalibrationSuccess(poseId) {
+            const statusDiv = document.getElementById('calibration-status');
+            const statusText = document.getElementById('calibration-status-text');
+            const nextBtn = document.getElementById('tutorial-next-btn');
+            const iconWrapper = document.getElementById('pose-icon-wrapper');
+
+            if (statusDiv && statusText && nextBtn && iconWrapper) {
+                statusDiv.classList.add('success');
+                statusText.innerText = 'PATTERN LOCKED [ SECURED ]';
+                iconWrapper.style.borderColor = 'var(--cyan-accent)';
+                iconWrapper.style.borderStyle = 'solid';
+
+                nextBtn.classList.add('success-glow');
+                nextBtn.disabled = false;
+
+                const dots = document.querySelectorAll('.dot');
+                if (dots[calibrationIndex]) {
+                    dots[calibrationIndex].classList.add('calibrated');
+                }
+
+                for (let k = 0; k < 15; k++) {
+                    particles.push(new Particle(width / 2, height / 2, currentPalette.accent, 'spark'));
+                }
+                feedbackText = 'CALIBRATION SUCCESSFUL';
+                feedbackTimer = 65;
+            }
+        }
+
+        function renderCalibrationComplete() {
+            document.getElementById('tutorial-step-indicator').innerText = 'NEURAL LINK SECURED';
+
+            const slideContainer = document.querySelector('.slide-container');
+            slideContainer.innerHTML = `
+                <div class="pose-icon-wrapper" style="border-color: var(--cyan-accent); border-style: solid; animation: pulse-border 1.5s infinite;">
+                    <span class="pose-icon" style="text-shadow: 0 0 10px var(--cyan-accent);">⚡</span>
+                </div>
+                <h2 class="pose-title" style="color: var(--cyan-accent); text-shadow: 0 0 15px rgba(0,243,255,0.4);">LINK ESTABLISHED</h2>
+                <div class="pose-desc" style="margin-bottom: 15px;">
+                    All biometric neural channels have been calibrated and locked.
+                </div>
+                
+                <div style="text-align: left; width: 100%; margin-bottom: 20px; background: rgba(0,243,255,0.02); border: 1px solid rgba(0,243,255,0.15); border-radius: 8px; padding: 14px 20px; box-sizing: border-box;">
+                    ${CALIBRATION_POSES.map(pose => `
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-family: var(--font-mono); font-size: 0.82rem;">
+                            <span style="color: rgba(240,242,245,0.8);">${pose.icon} &nbsp; ${pose.name.toUpperCase()}</span>
+                            <span style="color: var(--cyan-accent); font-weight: 700;">[ CALIBRATED ]</span>
+                        </div>
+                    `).join('')}
+                </div>
+                
+                <button class="start-btn" style="width: 100%; margin-top: 10px; font-size: 0.85rem;" onclick="finishCalibration()">INITIALIZE SESSION</button>
+            `;
+
+            document.getElementById('tutorial-prev-btn').style.display = 'none';
+            document.getElementById('tutorial-next-btn').style.display = 'none';
+            document.getElementById('tutorial-dots').style.display = 'none';
+        }
+
+        function finishCalibration() {
+            document.getElementById('tutorial-panel').classList.remove('active');
+            glitchAlpha = 255;
+            startGame();
+
+        }
+
+        function onResults(results) {
+            detections = results;
+            updateInteractionStates();
+            updateTrails();
+        }
+
+        function updateInteractionStates() {
+            if (!detections.multiHandLandmarks) return;
+
+            handGestures = ['open', 'open'];
+            let handsData = detections.multiHandLandmarks;
+
+            for (let i = 0; i < handsData.length; i++) {
+                const landmarks = handsData[i];
+                const label = detections.multiHandedness[i].label;
+                const handIdx = label === 'Right' ? 0 : 1;
+
+                const gesture = detectGesture(landmarks);
+                handGestures[handIdx] = gesture;
+
+                const thumbIdx = 4, indexIdx = 8;
+                const dPinch = dist(landmarks[thumbIdx].x, landmarks[thumbIdx].y, landmarks[indexIdx].x, landmarks[indexIdx].y);
+                if (dPinch < 0.05) handGestures[handIdx] = 'pinch';
+
+                const wrist = landmarks[0];
+                const v = dist(wrist.x, wrist.y, lastWristPos[handIdx].x, lastWristPos[handIdx].y);
+                handVelocities[handIdx] = v;
+                lastWristPos[handIdx] = { x: wrist.x, y: wrist.y };
+
+                if (pinchCooldown <= 0 && handGestures[handIdx] === 'pinch') {
+                    if (gameState === 'waiting') {
+                        paletteIdx = (paletteIdx + 1) % PALETTES.length;
+                        currentPalette = PALETTES[paletteIdx];
+                        pinchCooldown = 30;
+                        glitchAlpha = 150;
+                    }
+                    // Emit cubes and emojis on pinch
+                    const wrist = landmarks[0];
+                    const snapEmojis = ['💎', '🧊', '💿', '💾', '🔋'];
+                    for (let k = 0; k < 3; k++) particles.push(new Particle((1 - wrist.x) * width, wrist.y * height, currentPalette.accent, 'emoji', random(snapEmojis)));
+                    for (let k = 0; k < 5; k++) particles.push(new Particle((1 - wrist.x) * width, wrist.y * height, currentPalette.accent, 'cube'));
+                }
+
+                if (handGestures[handIdx] === 'peace') {
+                    const indexTip = landmarks[8];
+                    if (frameCount % 4 === 0) {
+                        const peaceEmojis = ['🌸', '🌺', '✨', '✌️', '🌈'];
+                        particles.push(new Particle((1 - indexTip.x) * width, indexTip.y * height, [255, 182, 193], 'emoji', random(peaceEmojis)));
+                    }
+                    if (frameCount % 2 === 0) {
+                        particles.push(new Particle((1 - indexTip.x) * width, indexTip.y * height, [255, 182, 193], 'flower'));
+                    }
+                }
+
+                if (handGestures[handIdx] === 'fist') {
+                    const wrist = landmarks[0];
+                    if (frameCount % 10 === 0) {
+                        const fistEmojis = ['🔥', '⚡', '💥', '👊', '🧨'];
+                        particles.push(new Particle((1 - wrist.x) * width, wrist.y * height, currentPalette.left, 'emoji', random(fistEmojis)));
+                    }
+                    if (frameCount % 3 === 0) {
+                        particles.push(new Particle((1 - wrist.x) * width, wrist.y * height, currentPalette.left, 'spark'));
+                    }
+                }
+            }
+
+            // Detect Two-Handed Heart
+            globalGesture = '';
+            if (handsData.length === 2) {
+                const h1 = handsData[0], h2 = handsData[1];
+                const thumb1 = h1[4], thumb2 = h2[4];
+                const index1 = h1[8], index2 = h2[8];
+
+                const dThumbs = dist(thumb1.x, thumb1.y, thumb2.x, thumb2.y);
+                const dIndex = dist(index1.x, index1.y, index2.x, index2.y);
+
+                // If thumbs are close and index fingers are close, it's a heart!
+                if (dThumbs < 0.1 && dIndex < 0.1) {
+                    globalGesture = 'heart';
+                    if (frameCount % 5 === 0) {
+                        const heartEmojis = ['❤️', '💖', '💗', '💓', '💞', '✨'];
+                        const midX = (index1.x + index2.x) / 2;
+                        const midY = (index1.y + index2.y) / 2;
+                        particles.push(new Particle((1 - midX) * width, midY * height, [255, 100, 150], 'emoji', random(heartEmojis)));
+                    }
+                }
+            }
+
+            if (handsData.length === 2 && clapCooldown <= 0) {
+                const h1 = handsData[0][0], h2 = handsData[1][0];
+                if (dist(h1.x, h1.y, h2.x, h2.y) < 0.15) {
+                    if (gameState === 'waiting') {
+                        startGame();
+                    } else {
+                        paletteIdx = floor(random(PALETTES.length));
+                        currentPalette = PALETTES[paletteIdx];
+                        glitchAlpha = 255;
+                        clapCooldown = 60;
+                        // Massive particle burst on clap
+                        for (let k = 0; k < 30; k++) {
+                            particles.push(new Particle(width / 2, height / 2, [255, 255, 255], 'default'));
+                        }
+                    }
+                }
+            }
+
+            if (pinchCooldown > 0) pinchCooldown--;
+            if (clapCooldown > 0) clapCooldown--;
+
+            // If in calibration state, check if the current target pose is achieved
+            if (gameState === 'calibration') {
+                const pose = CALIBRATION_POSES[calibrationIndex];
+                if (pose && !calibratedPoses[pose.id] && pose.check()) {
+                    calibratedPoses[pose.id] = true;
+                    triggerCalibrationSuccess(pose.id);
+                }
+            }
+
+            // Emit shake particles during calibration if they shake
+            if (gameState === 'calibration' && CALIBRATION_POSES[calibrationIndex]?.id === 'shake') {
+                const isShaking = handVelocities.some(v => v > 0.08);
+                if (isShaking && frameCount % 5 === 0 && detections.multiHandLandmarks) {
+                    const shakeEmojis = ['🌈', '🌊', '🌪️', '🌀', '🚀'];
+                    detections.multiHandLandmarks.forEach(hand => {
+                        particles.push(new Particle((1 - hand[0].x) * width, hand[0].y * height, [255, 255, 255], 'emoji', random(shakeEmojis)));
+                    });
+                }
+            }
+
+            if (gameState === 'playing') updateGame();
+        }
+
+        function startGame() {
+            gameState = 'playing';
+            score = 0; combo = 0; level = 1; lives = 3;
+            targetDuration = 180;
+            chromaticAmt = 0;
+            shockwaves = [];
+            scorePopups = [];
+            nextTarget();
+            glitchColor = [255, 255, 255];
+            glitchAlpha = 255;
+            feedbackText = 'NEURAL LINK STABLE';
+            feedbackTimer = 90;
+            initAudio();
+            startDrone();
+        }
+
+        function nextTarget() {
+            targetGesture = random(GESTURE_TARGETS);
+            gameTimer = targetDuration;
+            targetDuration = max(60, targetDuration - 2);
+        }
+
+        function updateGame() {
+            gameTimer--;
+            let success = false;
+
+            // Check global gestures first
+            if (globalGesture === targetGesture) {
+                success = true;
+            } else if (targetGesture === 'shake') {
+                const isShaking = handVelocities.some(v => v > 0.08);
+                if (isShaking && frameCount % 5 === 0) {
+                    const shakeEmojis = ['🌈', '🌊', '🌪️', '🌀', '🚀'];
+                    detections.multiHandLandmarks.forEach(hand => {
+                        particles.push(new Particle((1 - hand[0].x) * width, hand[0].y * height, [255, 255, 255], 'emoji', random(shakeEmojis)));
+                    });
+                }
+                success = isShaking;
+            } else {
+                success = handGestures.includes(targetGesture);
+            }
+
+            if (success) {
+                const gained = 100 * (combo + 1) * level;
+                score += gained;
+                combo++;
+                // Floating score popup
+                spawnScorePopup(`+${gained.toLocaleString()}`, width / 2, height / 2 - 80, currentPalette.accent);
+                // Shockwave at screen centre
+                shockwaves.push({ x: width / 2, y: height / 2, r: 0, maxR: 300 + combo * 15, alpha: 220, col: currentPalette.accent });
+                chromaticAmt = min(combo * 1.5, 12);
+                if (combo % 5 === 0) {
+                    level++;
+                    feedbackText = `LEVEL UP: ${level}`;
+                    feedbackTimer = 60;
+                    glitchAlpha = 80;
+                    glitchColor = [0, 243, 255];
+                    shockwaves.push({ x: width / 2, y: height / 2, r: 0, maxR: 500, alpha: 255, col: currentPalette.accent });
+                    for (let k = 0; k < 30; k++) particles.push(new Particle(width / 2, height / 2, currentPalette.accent, 'spark'));
+                    playLevelUpFanfare();
+                } else {
+                    feedbackText = 'PERFECT!';
+                    feedbackTimer = 40;
+                    glitchColor = [255, 255, 255];
+                    playSuccessChime(combo);
+                }
+                maxCombo = max(maxCombo, combo);
+                comboShake = min(combo * 2, 18);
+                glitchAlpha = max(glitchAlpha, 50);
+                nextTarget();
+            } else if (gameTimer <= 0) {
+                lives--;
+                playFailBuzz();
+                if (lives <= 0) {
+                    gameOver();
+                    return;
+                }
+                feedbackText = combo > 5 ? 'SYSTEM OVERLOAD' : 'LINK UNSTABLE';
+                glitchColor = [255, 30, 30];
+                glitchAlpha = max(glitchAlpha, 180);
+                combo = 0;
+                chromaticAmt = 0;
+                feedbackTimer = 60;
+                targetDuration = 180;
+                nextTarget();
+            }
+        }
+
+        function detectGesture(landmarks) {
+            const getDist = (a, b) => Math.sqrt(Math.pow(landmarks[a].x - landmarks[b].x, 2) + Math.pow(landmarks[a].y - landmarks[b].y, 2));
+            const wrist = 0, indexTip = 8, middleTip = 12, ringTip = 16, pinkyTip = 20;
+            const indexBase = 5, middleBase = 9, ringBase = 13, pinkyBase = 17;
+            const isIndexExtended = getDist(indexTip, wrist) > getDist(indexBase, wrist);
+            const isMiddleExtended = getDist(middleTip, wrist) > getDist(middleBase, wrist);
+            const isRingExtended = getDist(ringTip, wrist) > getDist(ringBase, wrist);
+            const isPinkyExtended = getDist(pinkyTip, wrist) > getDist(pinkyBase, wrist);
+            if (!isIndexExtended && !isMiddleExtended && !isRingExtended && !isPinkyExtended) return 'fist';
+            if (isIndexExtended && isMiddleExtended && !isRingExtended && !isPinkyExtended) return 'peace';
+            return 'open';
+        }
+
+        function updateTrails() {
+            if (!detections.multiHandLandmarks || frameCount % 2 !== 0) return;
+            let currentFrameTips = [];
+            detections.multiHandLandmarks.forEach((hand, i) => {
+                const label = detections.multiHandedness[i].label;
+                const handIdx = label === 'Right' ? 0 : 1;
+                let col = label === 'Right' ? currentPalette.left : currentPalette.right;
+                if (handVelocities[handIdx] > 0.08) {
+                    push(); colorMode(HSB);
+                    let c = color((frameCount * 5) % 360, 80, 100);
+                    col = [red(c), green(c), blue(c)];
+                    pop();
+                }
+                TIP_INDICES.forEach(idx => {
+                    currentFrameTips.push({ x: (1 - hand[idx].x) * width, y: hand[idx].y * height, col: col });
+                });
+            });
+            trailHistory.unshift(currentFrameTips);
+            if (trailHistory.length > MAX_TRAIL_LEN) trailHistory.pop();
+        }
+
+        let glitchColor = [255, 255, 255];
+
+        // ── Audio Engine ────────────────────────────────────────
+        function initAudio() {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        function playTone(freq, type, duration, gain = 0.18, delay = 0) {
+            if (!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            osc.connect(g); g.connect(audioCtx.destination);
+            osc.type = type; osc.frequency.setValueAtTime(freq, audioCtx.currentTime + delay);
+            g.gain.setValueAtTime(0, audioCtx.currentTime + delay);
+            g.gain.linearRampToValueAtTime(gain, audioCtx.currentTime + delay + 0.01);
+            g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + delay + duration);
+            osc.start(audioCtx.currentTime + delay);
+            osc.stop(audioCtx.currentTime + delay + duration + 0.05);
+        }
+        function playSuccessChime(combo) {
+            const base = 440 + Math.min(combo * 30, 400);
+            playTone(base, 'sine', 0.18, 0.14);
+            playTone(base * 1.25, 'sine', 0.12, 0.07, 0.05);
+        }
+        function playFailBuzz() {
+            playTone(180, 'sawtooth', 0.25, 0.12);
+            playTone(120, 'sawtooth', 0.2, 0.08, 0.1);
+        }
+        function playLevelUpFanfare() {
+            [523, 659, 784, 1047].forEach((f, i) => playTone(f, 'square', 0.18, 0.1, i * 0.07));
+        }
+        function startDrone() {
+            if (!audioCtx) return;
+            if (droneOsc) { try { droneOsc.stop(); } catch(e){} }
+            droneOsc = audioCtx.createOscillator();
+            droneGain = audioCtx.createGain();
+            droneOsc.connect(droneGain); droneGain.connect(audioCtx.destination);
+            droneOsc.type = 'sine'; droneOsc.frequency.setValueAtTime(55, audioCtx.currentTime);
+            droneGain.gain.setValueAtTime(0.04, audioCtx.currentTime);
+            droneOsc.start();
+        }
+        function stopDrone() {
+            if (droneGain) droneGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.5);
+        }
+
+        // ── Score Popups ─────────────────────────────────────────
+        function spawnScorePopup(txt, x, y, col) {
+            scorePopups.push({ txt, x, y: y, vy: -1.5, alpha: 255, col });
+        }
+        function drawScorePopups() {
+            textAlign(CENTER);
+            for (let i = scorePopups.length - 1; i >= 0; i--) {
+                const p = scorePopups[i];
+                p.y += p.vy;
+                p.alpha -= 4;
+                if (p.alpha <= 0) { scorePopups.splice(i, 1); continue; }
+                drawingContext.shadowBlur = 12;
+                drawingContext.shadowColor = `rgb(${p.col[0]},${p.col[1]},${p.col[2]})`;
+                fill(p.col[0], p.col[1], p.col[2], p.alpha);
+                textSize(18);
+                text(p.txt, p.x, p.y);
+                drawingContext.shadowBlur = 0;
+            }
+        }
+
+        // ── Game Over ────────────────────────────────────────────
+        function gameOver() {
+            gameState = 'gameover';
+            stopDrone();
+            const isNewRecord = score > highScore;
+            if (isNewRecord) {
+                highScore = score;
+                localStorage.setItem('glitchGripHighScore', highScore);
+            }
+            document.getElementById('go-score').innerText = score.toLocaleString();
+            document.getElementById('go-highscore').innerText = highScore.toLocaleString();
+            document.getElementById('go-combo').innerText = `x${maxCombo}`;
+            document.getElementById('go-level').innerText = level;
+            document.getElementById('go-record').innerText = isNewRecord ? '★ NEW HIGH SCORE ★' : '';
+            document.getElementById('game-over').classList.add('active');
+            
+            generateAIReport();
+        }
+        
+        function generateAIReport() {
+            const container = document.getElementById('ai-report-container');
+            const textEl = document.getElementById('ai-report-text');
+            
+            container.style.display = 'block';
+            textEl.innerText = "Analyzing biometric data...";
+            
+            // Simulated AI generation delay (In a real app, you would call the Gemini API here)
+            setTimeout(() => {
+                let report = "";
+                if (maxCombo > 15) {
+                    report = `Incredible focus, Operator. Holding a streak of ${maxCombo} at Level ${level} is top-tier performance. Your neural pathways are fully synchronized.`;
+                } else if (level === 1 && score === 0) {
+                    report = `Connection immediately lost. Ensure your hand gestures are clearly visible to the optical sensors and try again.`;
+                } else {
+                    const reports = [
+                        `Operator, you held ${maxCombo} consecutive neural locks at Level ${level}. Peak efficiency detected. Focus on improving reaction time under pressure.`,
+                        `Biometric sync failed at Level ${level}. Your streak of ${maxCombo} was commendable, but the system overloaded. Recommendation: train your visual-motor response.`,
+                        `Neural link severed. You achieved a score of ${score.toLocaleString()} before the connection destabilized. The grid requires faster pattern recognition.`,
+                        `Outstanding effort. A combo of ${maxCombo} indicates strong synaptic alignment. The cyber grid awaits your next attempt.`
+                    ];
+                    report = reports[Math.floor(Math.random() * reports.length)];
+                }
+                
+                // Typewriter effect
+                textEl.textContent = "";
+                let i = 0;
+                const typeInterval = setInterval(() => {
+                    textEl.textContent += report.charAt(i);
+                    i++;
+                    if (i >= report.length) clearInterval(typeInterval);
+                }, 30);
+            }, 800);
+        }
+
+        function restartGame() {
+            document.getElementById('game-over').classList.remove('active');
+            maxCombo = 0;
+            startGame();
+        }
+
+        function draw() {
+            background(2, 2, 8);
+
+            dataStreams.forEach(s => { s.update(); s.draw(); });
+
+            if (comboShake > 0) {
+                translate(random(-comboShake, comboShake), random(-comboShake, comboShake));
+                comboShake *= 0.85;
+                if (comboShake < 0.5) comboShake = 0;
+            }
+            drawGrid();
+
+            // Chromatic aberration — offset RGB channels at high combos
+            if (chromaticAmt > 0.5) {
+                push();
+                translate(width, 0); scale(-1, 1);
+                drawingContext.globalCompositeOperation = 'screen';
+                drawingContext.globalAlpha = 0.06;
+                // Red channel offset
+                drawingContext.filter = `url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'><filter id='r'><feColorMatrix type='matrix' values='1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0'/></filter></svg>#r")`;
+                drawingContext.drawImage(videoElement, -chromaticAmt, 0, width, height);
+                // Blue channel offset
+                drawingContext.filter = `url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'><filter id='b'><feColorMatrix type='matrix' values='0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0'/></filter></svg>#b")`;
+                drawingContext.drawImage(videoElement, chromaticAmt, 0, width, height);
+                drawingContext.filter = 'none';
+                drawingContext.globalCompositeOperation = 'source-over';
+                drawingContext.globalAlpha = 1.0;
+                pop();
+            }
+
+            push(); translate(width, 0); scale(-1, 1);
+            drawingContext.globalAlpha = 0.15;
+            drawingContext.drawImage(videoElement, 0, 0, width, height);
+            drawingContext.globalAlpha = 1.0;
+            pop();
+
+            if (detections.multiHandLandmarks && detections.multiHandLandmarks.length > 0) {
+                drawTrails();
+                drawHandSilhouettes();
+                drawSkeletons();
+                drawLandmarks();
+                drawStrings();
+            }
+
+            // Draw shockwaves
+            drawShockwaves();
+
+            for (let i = particles.length - 1; i >= 0; i--) {
+                particles[i].update(); particles[i].draw();
+                if (particles[i].alpha <= 0) particles.splice(i, 1);
+            }
+
+            drawScorePopups();
+            drawHUD();
+
+            if (glitchAlpha > 0) {
+                noStroke();
+                fill(glitchColor[0], glitchColor[1], glitchColor[2], glitchAlpha);
+                rect(0, 0, width, height);
+                glitchAlpha -= 18;
+            }
+            // Decay chromatic aberration
+            if (chromaticAmt > 0) chromaticAmt *= 0.93;
+        }
+
+        function drawHUD() {
+            textAlign(CENTER, CENTER);
+            if (gameState === 'intro') {
+                // Dim HUD during intro
+            } else if (gameState === 'waiting') {
+                fill(255, 200 + sin(frameCount * 0.1) * 55);
+                textSize(32);
+                text('READY PLAYER ONE', width / 2, height / 2 - 40);
+                textSize(18);
+                text('CLAP HANDS TO INITIALIZE LINK', width / 2, height / 2 + 20);
+                fill(currentPalette.accent);
+                text(`MAX COMBO: ${maxCombo}`, width / 2, height - 50);
+            } else if (gameState === 'playing') {
+                // Lives (top-right under combo)
+                push();
+                translate(width - 40, 105);
+                textAlign(RIGHT);
+                fill(255, 150); textSize(9); text('NEURAL CORES', 0, 0);
+                for (let li = 0; li < 3; li++) {
+                    const alive = li < lives;
+                    drawingContext.shadowBlur = alive ? 10 : 0;
+                    drawingContext.shadowColor = alive ? 'rgba(255,42,95,0.8)' : 'transparent';
+                    fill(alive ? [255, 42, 95] : [60, 60, 80]);
+                    noStroke();
+                    ellipse(-(li * 18), 18, 10, 10);
+                }
+                drawingContext.shadowBlur = 0;
+                pop();
+
+                // Score Panel
+                push();
+                translate(40, 110);
+                textAlign(LEFT);
+                fill(255, 150); textSize(10); text('SYSTEM_SCORE', 0, 0);
+                fill(currentPalette.left); textSize(28); 
+                drawingContext.shadowBlur = 15;
+                drawingContext.shadowColor = `rgb(${currentPalette.left.join(',')})`;
+                text(score.toLocaleString(), 0, 30);
+                drawingContext.shadowBlur = 0;
+                pop();
+
+                // Level Panel
+                push();
+                translate(40, 170);
+                textAlign(LEFT);
+                fill(255, 150); textSize(10); text('NEURAL_LEVEL', 0, 0);
+                fill(currentPalette.accent); textSize(20); 
+                drawingContext.shadowBlur = 15;
+                drawingContext.shadowColor = `rgb(${currentPalette.accent.join(',')})`;
+                text(level, 0, 25);
+                drawingContext.shadowBlur = 0;
+                pop();
+
+                // Combo Panel
+                push();
+                translate(width - 40, 40);
+                textAlign(RIGHT);
+                fill(255, 150); textSize(10); text('STREAK_MULTIPLIER', 0, 0);
+                fill(currentPalette.right); textSize(28); 
+                drawingContext.shadowBlur = 15;
+                drawingContext.shadowColor = `rgb(${currentPalette.right.join(',')})`;
+                text(`x${combo}`, 0, 30);
+                drawingContext.shadowBlur = 0;
+                pop();
+
+                // Target Panel
+                textAlign(CENTER);
+                fill(255, 100); textSize(12);
+                text('EXECUTING NEURAL PATTERN', width / 2, height / 2 - 120);
+
+                let pulse = sin(frameCount * 0.2) * 5;
+                textSize(54 + pulse);
+                drawingContext.shadowBlur = 30;
+                drawingContext.shadowColor = `rgb(${currentPalette.accent[0]}, ${currentPalette.accent[1]}, ${currentPalette.accent[2]})`;
+                fill(currentPalette.accent);
+                text(GESTURE_LABELS[targetGesture], width / 2, height / 2 - 60);
+                drawingContext.shadowBlur = 0;
+
+                // Progress Bar
+                let barW = 400;
+                let progress = (gameTimer / targetDuration) * barW;
+                noStroke();
+                fill(255, 20);
+                rect(width / 2 - barW / 2, height / 2 - 10, barW, 6, 3);
+
+                // Glow effect for progress bar
+                drawingContext.shadowBlur = 15;
+                drawingContext.shadowColor = `rgb(${currentPalette.accent[0]}, ${currentPalette.accent[1]}, ${currentPalette.accent[2]})`;
+                fill(currentPalette.accent);
+                rect(width / 2 - barW / 2, height / 2 - 10, progress, 6, 3);
+                drawingContext.shadowBlur = 0;
+
+                // Warning indicator
+                if (gameTimer < targetDuration * 0.3) {
+                    fill(255, 0, 0, 100 + sin(frameCount * 0.5) * 155);
+                    textSize(14);
+                    text('CRITICAL TIMING OFFSET', width / 2, height / 2 + 30);
+                }
+            }
+            if (feedbackTimer > 0) {
+                feedbackTimer--;
+                textAlign(CENTER);
+                textSize(32);
+                let alpha = map(feedbackTimer, 0, 40, 0, 255);
+                fill(255, alpha);
+                text(feedbackText, width / 2, height / 2 + 80);
+            }
+        }
+
+        function drawGrid() {
+            let col = currentPalette.left;
+            const isShaking = handVelocities.some(v => v > 0.08);
+            if (isShaking) stroke(255, 255, 255, 100 + sin(frameCount * 0.5) * 50);
+            else stroke(col[0], col[1], col[2], 30);
+            strokeWeight(1);
+            const landmarks = detections.multiHandLandmarks;
+            gridPoints.forEach(p => p.update(landmarks));
+            for (let i = 0; i < gridPoints.length; i++) {
+                const p = gridPoints[i]; point(p.x, p.y);
+                if (i % 8 === 0 && gridPoints[i + 1]) {
+                    if (!isShaking) stroke(currentPalette.right[0], currentPalette.right[1], currentPalette.right[2], 15);
+                    line(p.x, p.y, gridPoints[i + 1].x, gridPoints[i + 1].y);
+                }
+            }
+        }
+
+        function drawTrails() {
+            noFill();
+            // Performance: Only draw every 2nd frame of trails
+            for (let i = 0; i < trailHistory.length; i += 2) {
+                const frame = trailHistory[i];
+                const alpha = map(i, 0, MAX_TRAIL_LEN, 100, 0);
+
+                frame.forEach(tip => {
+                    const col = tip.col;
+                    fill(col[0], col[1], col[2], alpha);
+                    noStroke();
+                    ellipse(tip.x, tip.y, 4, 4);
+                });
+            }
+        }
+
+        function drawShockwaves() {
+            noFill();
+            for (let i = shockwaves.length - 1; i >= 0; i--) {
+                const sw = shockwaves[i];
+                sw.r += (sw.maxR - sw.r) * 0.12;
+                sw.alpha *= 0.88;
+                if (sw.alpha < 2) { shockwaves.splice(i, 1); continue; }
+                const progress = sw.r / sw.maxR;
+                // Outer ring
+                drawingContext.shadowBlur = 20;
+                drawingContext.shadowColor = `rgb(${sw.col[0]},${sw.col[1]},${sw.col[2]})`;
+                stroke(sw.col[0], sw.col[1], sw.col[2], sw.alpha);
+                strokeWeight(2);
+                ellipse(sw.x, sw.y, sw.r * 2, sw.r * 2);
+                // Inner ring
+                stroke(255, 255, 255, sw.alpha * 0.4);
+                strokeWeight(1);
+                ellipse(sw.x, sw.y, sw.r * 1.5, sw.r * 1.5);
+                drawingContext.shadowBlur = 0;
+            }
+        }
+
+        // Hand skeleton — connects joints with glowing circuitry lines
+        const HAND_CONNECTIONS = [
+            [0,1],[1,2],[2,3],[3,4],       // thumb
+            [0,5],[5,6],[6,7],[7,8],       // index
+            [0,9],[9,10],[10,11],[11,12],  // middle
+            [0,13],[13,14],[14,15],[15,16],// ring
+            [0,17],[17,18],[18,19],[19,20],// pinky
+            [5,9],[9,13],[13,17]           // palm arch
+        ];
+
+        function drawSkeletons() {
+            const multiLandmarks = detections.multiHandLandmarks;
+            const multiHandedness = detections.multiHandedness;
+            for (let i = 0; i < multiLandmarks.length; i++) {
+                const lm = multiLandmarks[i];
+                const isLeft = multiHandedness[i].label === 'Right';
+                const col = isLeft ? currentPalette.left : currentPalette.right;
+                strokeWeight(1.5);
+                drawingContext.shadowBlur = 8;
+                drawingContext.shadowColor = `rgb(${col[0]},${col[1]},${col[2]})`;
+                HAND_CONNECTIONS.forEach(([a, b]) => {
+                    const ax = (1 - lm[a].x) * width, ay = lm[a].y * height;
+                    const bx = (1 - lm[b].x) * width, by = lm[b].y * height;
+                    stroke(col[0], col[1], col[2], 180);
+                    line(ax, ay, bx, by);
+                    // Small junction dots
+                    fill(col[0], col[1], col[2], 200);
+                    noStroke();
+                    ellipse(ax, ay, 3, 3);
+                });
+                drawingContext.shadowBlur = 0;
+            }
+        }
+
+        function drawHandSilhouettes() {
+            const multiLandmarks = detections.multiHandLandmarks;
+            const multiHandedness = detections.multiHandedness;
+
+            for (let i = 0; i < multiLandmarks.length; i++) {
+                const landmarks = multiLandmarks[i];
+                const isLeft = multiHandedness[i].label === 'Right';
+                const col = isLeft ? currentPalette.left : currentPalette.right;
+
+                fill(col[0], col[1], col[2], 12);
+                noStroke();
+                beginShape();
+                [0, 1, 2, 3, 4, 3, 2, 5, 6, 7, 8, 7, 6, 9, 10, 11, 12, 11, 10, 13, 14, 15, 16, 15, 14, 17, 18, 19, 20, 0].forEach(idx => {
+                    const x = (1 - landmarks[idx].x) * width;
+                    const y = landmarks[idx].y * height;
+                    vertex(x, y);
+                });
+                endShape(CLOSE);
+            }
+        }
+
+        function drawLandmarks() {
+            const multiLandmarks = detections.multiHandLandmarks;
+            const multiHandedness = detections.multiHandedness;
+
+            for (let i = 0; i < multiLandmarks.length; i++) {
+                const landmarks = multiLandmarks[i];
+                const isLeft = multiHandedness[i].label === 'Right';
+                const col = isLeft ? currentPalette.left : currentPalette.right;
+
+                for (let j = 0; j < landmarks.length; j++) {
+                    const x = (1 - landmarks[j].x) * width;
+                    const y = landmarks[j].y * height;
+
+                    if (TIP_INDICES.includes(j)) {
+                        drawingContext.shadowBlur = 20; // Reduced from 25
+                        drawingContext.shadowColor = `rgb(${col[0]}, ${col[1]}, ${col[2]})`;
+                        fill(col[0], col[1], col[2]);
+                        ellipse(x, y, 10, 10);
+                        fill(255);
+                        ellipse(x, y, 4, 4);
+                    } else {
+                        drawingContext.shadowBlur = 0; // Performance: Remove glow from joints
+                        fill(col[0], col[1], col[2], 80);
+                        ellipse(x, y, 3, 3);
+                    }
+                }
+            }
+        }
+
+        function drawLightning(x1, y1, x2, y2, col) {
+            const segments = 6; // Reduced from 8
+            const boltX = [x1], boltY = [y1];
+            boltX[segments] = x2; boltY[segments] = y2;
+
+            for (let i = 1; i < segments; i++) {
+                const t = i / segments;
+                const offset = 20;
+                boltX[i] = lerp(x1, x2, t) + random(-offset, offset);
+                boltY[i] = lerp(y1, y2, t) + random(-offset, offset);
+            }
+
+            stroke(255); strokeWeight(2);
+            drawingContext.shadowBlur = 15;
+            drawingContext.shadowColor = `rgb(${col[0]}, ${col[1]}, ${col[2]})`;
+            noFill(); beginShape();
+            for (let i = 0; i <= segments; i++) vertex(boltX[i], boltY[i]);
+            endShape();
+
+            stroke(col[0], col[1], col[2], 120); strokeWeight(6);
+            beginShape();
+            for (let i = 0; i <= segments; i++) vertex(boltX[i], boltY[i]);
+            endShape();
+        }
+
+        function drawStrings() {
+            if (detections.multiHandLandmarks.length < 2) return;
+            let leftHand = null, rightHand = null;
+            detections.multiHandLandmarks.forEach((hand, i) => {
+                if (detections.multiHandedness[i].label === 'Right') leftHand = hand;
+                else rightHand = hand;
+            });
+            if (!leftHand || !rightHand) return;
+
+            const isFistActive = handGestures.includes('fist');
+
+            for (let i = 0; i < TIP_INDICES.length; i++) {
+                const idx = TIP_INDICES[i];
+                const x1 = (1 - leftHand[idx].x) * width, y1 = leftHand[idx].y * height;
+                const x2 = (1 - rightHand[idx].x) * width, y2 = rightHand[idx].y * height;
+                const d = dist(x1, y1, x2, y2);
+
+                if (d < 50) {
+                    for (let p = 0; p < 5; p++) particles.push(new Particle((x1 + x2) / 2, (y1 + y2) / 2, currentPalette.accent));
+                }
+
+                if (isFistActive || level > 3) {
+                    drawLightning(x1, y1, x2, y2, level > 5 ? currentPalette.accent : currentPalette.left);
+                } else {
+                    const normDist = constrain(d / (width * 0.7), 0, 1);
+                    const weight = map(normDist, 0, 1, 6 + level, 1.5 + level / 2);
+                    const col1 = color(currentPalette.left[0], currentPalette.left[1], currentPalette.left[2]);
+                    const col2 = color(currentPalette.right[0], currentPalette.right[1], currentPalette.right[2]);
+                    const col3 = color(currentPalette.accent[0], currentPalette.accent[1], currentPalette.accent[2]);
+                    let strokeCol = lerpColor(col1, col2, normDist);
+                    if (d < 120) strokeCol = lerpColor(strokeCol, col3, 1 - (d / 120));
+
+                    drawingContext.shadowBlur = 20; // Reduced from 30
+                    drawingContext.shadowColor = strokeCol.toString();
+                    stroke(strokeCol); strokeWeight(weight);
+                    line(x1, y1, x2, y2);
+                    stroke(255, 200); strokeWeight(weight * 0.3);
+                    line(x1, y1, x2, y2);
+                }
+
+                const nextIdx = TIP_INDICES[(i + 1) % TIP_INDICES.length];
+                const nx2 = (1 - rightHand[nextIdx].x) * width, ny2 = rightHand[nextIdx].y * height;
+                stroke(255, 255, 255, 30); strokeWeight(0.5); drawingContext.shadowBlur = 0;
+                line(x1, y1, nx2, ny2);
+            }
+        }
+
+        function windowResized() {
+            resizeCanvas(windowWidth, windowHeight);
+            // Re-init grid on resize
+            gridPoints = [];
+            const res = 70;
+            for (let x = 0; x <= width; x += res) {
+                for (let y = 0; y <= height; y += res) {
+                    gridPoints.push(new GridPoint(x, y));
+                }
+            }
+        }
+    </script>
+</body>
+
+</html>
