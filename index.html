@@ -960,6 +960,10 @@
 
     <video id="video-element" playsinline></video>
 
+    <audio id="bg-music" loop>
+        <source src="background.mp3" type="audio/mpeg">
+    </audio>
+
     <script>
         let hands;
         let camera;
@@ -974,6 +978,7 @@
         let highScore = parseInt(localStorage.getItem('glitchGripHighScore') || '0');
         let audioCtx = null;
         let droneOsc = null, droneGain = null;
+        let bgMusic = null;
 
         const PALETTES = [
             { name: 'neon', left: [0, 255, 255], right: [255, 0, 255], accent: [255, 255, 0] },
@@ -987,6 +992,7 @@
         let score = 0, combo = 0, maxCombo = 0, level = 1;
         let targetGesture = '';
         let gameTimer = 0, targetDuration = 180;
+        let sessionTimer = 0;
         let feedbackText = '', feedbackTimer = 0;
         let comboShake = 0;
         let currentPalette = PALETTES[0];
@@ -1249,6 +1255,9 @@
             }
 
             videoElement = document.getElementById('video-element');
+            bgMusic = document.getElementById('bg-music');
+            if (bgMusic) bgMusic.volume = 0.4; // Set reasonable background volume
+            
             hands = new Hands({
                 locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
             });
@@ -1598,6 +1607,7 @@
             gameState = 'playing';
             score = 0; combo = 0; level = 1; lives = 3;
             targetDuration = 180;
+            sessionTimer = 60 * 60; // 60 seconds
             chromaticAmt = 0;
             shockwaves = [];
             scorePopups = [];
@@ -1608,6 +1618,11 @@
             feedbackTimer = 90;
             initAudio();
             startDrone();
+            
+            if (bgMusic) {
+                bgMusic.currentTime = 0;
+                bgMusic.play().catch(e => console.log("Audio play failed:", e));
+            }
         }
 
         function nextTarget() {
@@ -1617,6 +1632,11 @@
         }
 
         function updateGame() {
+            sessionTimer--;
+            if (sessionTimer <= 0) {
+                gameOver();
+                return;
+            }
             gameTimer--;
             let success = false;
 
@@ -1784,6 +1804,8 @@
         function gameOver() {
             gameState = 'gameover';
             stopDrone();
+            if (bgMusic) bgMusic.pause();
+            
             const isNewRecord = score > highScore;
             if (isNewRecord) {
                 highScore = score;
@@ -1967,6 +1989,20 @@
                 drawingContext.shadowBlur = 15;
                 drawingContext.shadowColor = `rgb(${currentPalette.right.join(',')})`;
                 text(`x${combo}`, 0, 30);
+                drawingContext.shadowBlur = 0;
+                pop();
+
+                // Session Timer Panel
+                push();
+                translate(width / 2, 80);
+                textAlign(CENTER);
+                fill(255, 150); textSize(10); text('SESSION_TIME', 0, 0);
+                let secondsLeft = Math.ceil(sessionTimer / 60);
+                let timeCol = secondsLeft <= 10 ? [255, 42, 95] : currentPalette.accent;
+                fill(timeCol); textSize(28); 
+                drawingContext.shadowBlur = 15;
+                drawingContext.shadowColor = `rgb(${timeCol.join(',')})`;
+                text(`${Math.floor(secondsLeft / 60)}:${(secondsLeft % 60).toString().padStart(2, '0')}`, 0, 30);
                 drawingContext.shadowBlur = 0;
                 pop();
 
